@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Expense } from '../lib/types';
+import { formatCurrency } from '../lib/types';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { ExpenseForm } from './ExpenseForm';
 
@@ -106,7 +107,7 @@ export function ExpensesList() {
                   <div>
                     <span className="text-xs text-slate-500">Valor</span>
                     <p className="text-sm font-medium text-red-600">
-                      R$ {expense.amount.toFixed(2)}
+                      {formatCurrency(expense.amount)}
                     </p>
                   </div>
                 </div>

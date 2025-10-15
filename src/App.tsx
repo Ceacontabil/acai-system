@@ -3,9 +3,10 @@ import { Dashboard } from './components/Dashboard';
 import { ProductList } from './components/ProductList';
 import { SalesList } from './components/SalesList';
 import { ExpensesList } from './components/ExpensesList';
-import { LayoutDashboard, Package, ShoppingCart, Receipt } from 'lucide-react';
+import { PotesList } from './components/PotesList';
+import { LayoutDashboard, Package, ShoppingCart, Receipt, Coffee } from 'lucide-react';
 
-type Tab = 'dashboard' | 'products' | 'sales' | 'expenses';
+type Tab = 'dashboard' | 'potes' | 'products' | 'sales' | 'expenses';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -21,7 +22,8 @@ function App() {
 
   const tabs = [
     { id: 'dashboard' as Tab, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'products' as Tab, label: 'Produtos', icon: Package },
+    { id: 'potes' as Tab, label: 'Potes', icon: Coffee },
+    { id: 'products' as Tab, label: 'Tamanhos', icon: Package },
     { id: 'sales' as Tab, label: 'Vendas', icon: ShoppingCart },
     { id: 'expenses' as Tab, label: 'Despesas', icon: Receipt },
   ];
@@ -30,7 +32,7 @@ function App() {
     <div className="min-h-screen bg-slate-100">
       <header className="bg-slate-800 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold">Gestão de Estoque</h1>
+          <h1 className="text-2xl font-bold">Gestão de Açaí</h1>
         </div>
       </header>
 
@@ -60,6 +62,7 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'potes' && <PotesList />}
         {activeTab === 'products' && <ProductList />}
         {activeTab === 'sales' && <SalesList />}
         {activeTab === 'expenses' && <ExpensesList />}

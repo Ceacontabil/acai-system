@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { SaleWithProduct, Product } from '../lib/types';
+import type { SaleWithDetails, AcaiProduct, Pote } from '../lib/types';
+import { formatCurrency } from '../lib/types';
 import { Plus, Trash2 } from 'lucide-react';
 import { SaleForm } from './SaleForm';
 
 export function SalesList() {
-  const [sales, setSales] = useState<SaleWithProduct[]>([]);
+  const [sales, setSales] = useState<SaleWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
@@ -17,7 +18,7 @@ export function SalesList() {
     try {
       const { data, error } = await supabase
         .from('sales')
-        .select('*, products(*)')
+        .select('*, acai_products(*), potes(*)')
         .order('sale_date', { ascending: false });
 
       if (error) throw error;
@@ -30,16 +31,21 @@ export function SalesList() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Tem certeza que deseja excluir esta venda? O estoque será ajustado.')) return;
+    if (!confirm('Tem certeza que deseja excluir esta venda? O ML será devolvido ao pote.')) return;
 
     try {
       const sale = sales.find(s => s.id === id);
       if (!sale) return;
 
-      await supabase
-        .from('products')
-        .update({ stock_quantity: (sale.products as Product).stock_quantity + sale.quantity })
-        .eq('id', sale.product_id);
+      if (sale.pote_id && sale.ml_consumed > 0) {
+        await supabase
+          .from('potes')
+          .update({
+            remaining_ml: (sale.potes as Pote).remaining_ml + sale.ml_consumed,
+            status: 'ativo'
+          })
+          .eq('id', sale.pote_id);
+      }
 
       const { error } = await supabase.from('sales').delete().eq('id', id);
       if (error) throw error;
@@ -85,58 +91,71 @@ export function SalesList() {
       {showForm && <SaleForm onClose={handleCloseForm} />}
 
       <div className="grid gap-4">
-        {sales.map((sale) => (
-          <div
-            key={sale.id}
-            className="bg-white rounded-lg shadow-sm p-4 border border-slate-200 hover:shadow-md transition-shadow"
-          >
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">
-                  {(sale.products as Product).name}
-                </h3>
-                <p className="text-slate-600 text-sm mt-1">
-                  {formatDate(sale.sale_date)}
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
-                  <div>
-                    <span className="text-xs text-slate-500">Quantidade</span>
-                    <p className="text-sm font-medium text-slate-700">{sale.quantity} un.</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-500">Preço Unitário</span>
-                    <p className="text-sm font-medium text-slate-700">
-                      R$ {sale.unit_price.toFixed(2)}
+        {sales.map((sale) => {
+          const product = sale.acai_products as AcaiProduct;
+          const pote = sale.potes as Pote | null;
+          const costPerMl = pote ? pote.cost_price / pote.total_ml : 0;
+          const totalCost = costPerMl * sale.ml_consumed;
+          const profit = sale.total_price - totalCost;
+
+          return (
+            <div
+              key={sale.id}
+              className="bg-white rounded-lg shadow-sm p-4 border border-slate-200 hover:shadow-md transition-shadow"
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-slate-800">
+                    {product.name}
+                  </h3>
+                  <p className="text-slate-600 text-sm mt-1">
+                    {formatDate(sale.sale_date)}
+                  </p>
+                  {pote && (
+                    <p className="text-purple-600 text-xs mt-1">
+                      Pote: {pote.flavor} | {sale.ml_consumed}ml consumidos
                     </p>
+                  )}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
+                    <div>
+                      <span className="text-xs text-slate-500">Quantidade</span>
+                      <p className="text-sm font-medium text-slate-700">{sale.quantity} un.</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500">Preço Unitário</span>
+                      <p className="text-sm font-medium text-slate-700">
+                        {formatCurrency(sale.unit_price)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500">Total Venda</span>
+                      <p className="text-sm font-medium text-blue-600">
+                        {formatCurrency(sale.total_price)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-500">Lucro</span>
+                      <p className="text-sm font-medium text-emerald-600">
+                        {formatCurrency(profit)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs text-slate-500">Total</span>
-                    <p className="text-sm font-medium text-blue-600">
-                      R$ {sale.total_price.toFixed(2)}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-500">Lucro</span>
-                    <p className="text-sm font-medium text-emerald-600">
-                      R$ {((sale.unit_price - (sale.products as Product).cost_price) * sale.quantity).toFixed(2)}
-                    </p>
-                  </div>
+                  {sale.notes && (
+                    <p className="text-sm text-slate-600 mt-2 italic">{sale.notes}</p>
+                  )}
                 </div>
-                {sale.notes && (
-                  <p className="text-sm text-slate-600 mt-2 italic">{sale.notes}</p>
-                )}
-              </div>
-              <div className="flex gap-2 ml-4">
-                <button
-                  onClick={() => handleDelete(sale.id)}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <div className="flex gap-2 ml-4">
+                  <button
+                    onClick={() => handleDelete(sale.id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {sales.length === 0 && (

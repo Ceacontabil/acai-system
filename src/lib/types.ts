@@ -1,10 +1,15 @@
 export interface Database {
   public: {
     Tables: {
-      products: {
-        Row: Product;
-        Insert: Omit<Product, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>;
+      acai_products: {
+        Row: AcaiProduct;
+        Insert: Omit<AcaiProduct, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<AcaiProduct, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      potes: {
+        Row: Pote;
+        Insert: Omit<Pote, 'id' | 'created_at'>;
+        Update: Partial<Omit<Pote, 'id' | 'created_at'>>;
       };
       sales: {
         Row: Sale;
@@ -20,17 +25,26 @@ export interface Database {
   };
 }
 
-export interface Product {
+export interface AcaiProduct {
   id: string;
   name: string;
-  description: string;
-  cost_price: number;
+  size_ml: number;
   sale_price: number;
-  stock_quantity: number;
-  min_stock: number;
   category: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface Pote {
+  id: string;
+  flavor: string;
+  size_liters: number;
+  cost_price: number;
+  purchase_date: string;
+  total_ml: number;
+  remaining_ml: number;
+  status: 'ativo' | 'esgotado';
+  created_at: string;
 }
 
 export interface Sale {
@@ -41,6 +55,8 @@ export interface Sale {
   total_price: number;
   sale_date: string;
   notes: string;
+  pote_id: string | null;
+  ml_consumed: number;
   created_at: string;
 }
 
@@ -53,15 +69,25 @@ export interface Expense {
   created_at: string;
 }
 
-export interface SaleWithProduct extends Sale {
-  products: Product;
+export interface SaleWithDetails extends Sale {
+  acai_products: AcaiProduct;
+  potes: Pote | null;
 }
 
 export interface Metrics {
   totalSales: number;
   totalRevenue: number;
+  totalCost: number;
   totalProfit: number;
   totalExpenses: number;
-  inventoryValue: number;
+  potesInventoryValue: number;
+  netProfit: number;
   period: 'day' | 'week' | 'month';
+}
+
+export function formatCurrency(value: number): string {
+  return value.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
 }

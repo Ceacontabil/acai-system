@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Metrics } from '../lib/types';
-import { TrendingUp, DollarSign, ShoppingCart, Package, AlertTriangle } from 'lucide-react';
+import type { Metrics, Pote } from '../lib/types';
+import { formatCurrency } from '../lib/types';
+import { TrendingUp, DollarSign, ShoppingCart, Package, PackageX } from 'lucide-react';
 
 type Period = 'day' | 'week' | 'month';
 
@@ -9,18 +10,20 @@ export function Dashboard() {
   const [metrics, setMetrics] = useState<Metrics>({
     totalSales: 0,
     totalRevenue: 0,
+    totalCost: 0,
     totalProfit: 0,
     totalExpenses: 0,
-    inventoryValue: 0,
+    potesInventoryValue: 0,
+    netProfit: 0,
     period: 'day',
   });
   const [period, setPeriod] = useState<Period>('day');
   const [loading, setLoading] = useState(true);
-  const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
+  const [lowStockPotes, setLowStockPotes] = useState<Pote[]>([]);
 
   useEffect(() => {
     loadMetrics();
-    loadLowStockProducts();
+    loadLowStockPotes();
   }, [period]);
 
   async function loadMetrics() {
@@ -43,7 +46,7 @@ export function Dashboard() {
 
       const { data: salesData } = await supabase
         .from('sales')
-        .select('*, products(*)')
+        .select('*, acai_products(*), potes(*)')
         .gte('sale_date', startDate.toISOString());
 
       const { data: expensesData } = await supabase
@@ -51,31 +54,43 @@ export function Dashboard() {
         .select('*')
         .gte('expense_date', startDate.toISOString());
 
-      const { data: productsData } = await supabase
-        .from('products')
-        .select('*');
+      const { data: potesData } = await supabase
+        .from('potes')
+        .select('*')
+        .eq('status', 'ativo');
 
       const totalSales = salesData?.length || 0;
       const totalRevenue = salesData?.reduce((sum, sale) => sum + sale.total_price, 0) || 0;
 
-      const totalProfit = salesData?.reduce((sum, sale) => {
-        const product = sale.products as any;
-        return sum + ((sale.unit_price - product.cost_price) * sale.quantity);
+      const totalCost = salesData?.reduce((sum, sale) => {
+        const pote = sale.potes as any;
+        if (!pote) return sum;
+        const costPerMl = pote.cost_price / pote.total_ml;
+        return sum + (costPerMl * sale.ml_consumed);
       }, 0) || 0;
+
+      const totalProfit = totalRevenue - totalCost;
 
       const totalExpenses = expensesData?.reduce((sum, expense) => sum + expense.amount, 0) || 0;
 
-      const inventoryValue = productsData?.reduce(
-        (sum, product) => sum + (product.cost_price * product.stock_quantity),
+      const potesInventoryValue = potesData?.reduce(
+        (sum, pote) => {
+          const costPerMl = pote.cost_price / pote.total_ml;
+          return sum + (costPerMl * pote.remaining_ml);
+        },
         0
       ) || 0;
+
+      const netProfit = totalProfit - totalExpenses;
 
       setMetrics({
         totalSales,
         totalRevenue,
+        totalCost,
         totalProfit,
         totalExpenses,
-        inventoryValue,
+        potesInventoryValue,
+        netProfit,
         period,
       });
     } catch (error) {
@@ -85,20 +100,20 @@ export function Dashboard() {
     }
   }
 
-  async function loadLowStockProducts() {
+  async function loadLowStockPotes() {
     try {
       const { data, error } = await supabase
-        .from('products')
+        .from('potes')
         .select('*')
-        .lte('stock_quantity', supabase.rpc('min_stock'))
-        .order('stock_quantity', { ascending: true });
+        .eq('status', 'ativo')
+        .lte('remaining_ml', 1000)
+        .order('remaining_ml', { ascending: true });
 
       if (!error) {
-        const lowStock = data?.filter(p => p.stock_quantity <= p.min_stock) || [];
-        setLowStockProducts(lowStock);
+        setLowStockPotes(data || []);
       }
     } catch (error) {
-      console.error('Erro ao carregar produtos com estoque baixo:', error);
+      console.error('Erro ao carregar potes com estoque baixo:', error);
     }
   }
 
@@ -108,15 +123,13 @@ export function Dashboard() {
     month: 'Últimos 30 dias',
   };
 
-  const netProfit = metrics.totalProfit - metrics.totalExpenses;
-
   if (loading) {
     return <div className="text-center py-8">Carregando...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
         <div className="flex gap-2">
           {(['day', 'week', 'month'] as Period[]).map((p) => (
@@ -152,8 +165,8 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-emerald-100 text-sm font-medium">Receita</p>
-              <p className="text-3xl font-bold mt-2">
-                R$ {metrics.totalRevenue.toFixed(2)}
+              <p className="text-2xl font-bold mt-2">
+                {formatCurrency(metrics.totalRevenue)}
               </p>
             </div>
             <div className="bg-white bg-opacity-20 p-3 rounded-lg">
@@ -162,12 +175,26 @@ export function Dashboard() {
           </div>
         </div>
 
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-md p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-orange-100 text-sm font-medium">Custo do Açaí</p>
+              <p className="text-2xl font-bold mt-2">
+                {formatCurrency(metrics.totalCost)}
+              </p>
+            </div>
+            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
+              <Package size={28} />
+            </div>
+          </div>
+        </div>
+
         <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg shadow-md p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-teal-100 text-sm font-medium">Lucro Bruto</p>
-              <p className="text-3xl font-bold mt-2">
-                R$ {metrics.totalProfit.toFixed(2)}
+              <p className="text-2xl font-bold mt-2">
+                {formatCurrency(metrics.totalProfit)}
               </p>
             </div>
             <div className="bg-white bg-opacity-20 p-3 rounded-lg">
@@ -180,8 +207,8 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-red-100 text-sm font-medium">Despesas</p>
-              <p className="text-3xl font-bold mt-2">
-                R$ {metrics.totalExpenses.toFixed(2)}
+              <p className="text-2xl font-bold mt-2">
+                {formatCurrency(metrics.totalExpenses)}
               </p>
             </div>
             <div className="bg-white bg-opacity-20 p-3 rounded-lg">
@@ -194,8 +221,8 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-slate-300 text-sm font-medium">Lucro Líquido</p>
-              <p className="text-3xl font-bold mt-2">
-                R$ {netProfit.toFixed(2)}
+              <p className="text-2xl font-bold mt-2">
+                {formatCurrency(metrics.netProfit)}
               </p>
             </div>
             <div className="bg-white bg-opacity-20 p-3 rounded-lg">
@@ -204,12 +231,12 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg shadow-md p-6 text-white">
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-md p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-amber-100 text-sm font-medium">Valor do Estoque</p>
-              <p className="text-3xl font-bold mt-2">
-                R$ {metrics.inventoryValue.toFixed(2)}
+              <p className="text-purple-100 text-sm font-medium">Valor em Potes</p>
+              <p className="text-2xl font-bold mt-2">
+                {formatCurrency(metrics.potesInventoryValue)}
               </p>
             </div>
             <div className="bg-white bg-opacity-20 p-3 rounded-lg">
@@ -219,32 +246,32 @@ export function Dashboard() {
         </div>
       </div>
 
-      {lowStockProducts.length > 0 && (
+      {lowStockPotes.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="text-amber-600" size={20} />
+            <PackageX className="text-amber-600" size={20} />
             <h3 className="text-lg font-semibold text-amber-900">
-              Produtos com Estoque Baixo
+              Potes com Estoque Baixo (menos de 1L)
             </h3>
           </div>
           <div className="space-y-2">
-            {lowStockProducts.map((product) => (
+            {lowStockPotes.map((pote) => (
               <div
-                key={product.id}
+                key={pote.id}
                 className="flex justify-between items-center bg-white rounded-lg p-3"
               >
                 <div>
-                  <p className="font-medium text-slate-800">{product.name}</p>
+                  <p className="font-medium text-slate-800">{pote.flavor}</p>
                   <p className="text-sm text-slate-600">
-                    Categoria: {product.category}
+                    Comprado em: {new Date(pote.purchase_date).toLocaleDateString('pt-BR')}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-amber-600">
-                    {product.stock_quantity} un.
+                    {pote.remaining_ml}ml
                   </p>
                   <p className="text-xs text-slate-500">
-                    Mín: {product.min_stock}
+                    de {pote.total_ml}ml
                   </p>
                 </div>
               </div>

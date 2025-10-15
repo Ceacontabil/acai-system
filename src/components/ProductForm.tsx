@@ -1,22 +1,19 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Product } from '../lib/types';
+import type { AcaiProduct } from '../lib/types';
 import { X } from 'lucide-react';
 
 interface ProductFormProps {
-  product: Product | null;
+  product: AcaiProduct | null;
   onClose: () => void;
 }
 
 export function ProductForm({ product, onClose }: ProductFormProps) {
   const [formData, setFormData] = useState({
     name: product?.name || '',
-    description: product?.description || '',
-    cost_price: product?.cost_price || 0,
+    size_ml: product?.size_ml || 0,
     sale_price: product?.sale_price || 0,
-    stock_quantity: product?.stock_quantity || 0,
-    min_stock: product?.min_stock || 0,
-    category: product?.category || 'Geral',
+    category: product?.category || 'Açaí',
   });
   const [loading, setLoading] = useState(false);
 
@@ -27,12 +24,12 @@ export function ProductForm({ product, onClose }: ProductFormProps) {
     try {
       if (product) {
         const { error } = await supabase
-          .from('products')
+          .from('acai_products')
           .update(formData)
           .eq('id', product.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('products').insert([formData]);
+        const { error } = await supabase.from('acai_products').insert([formData]);
         if (error) throw error;
       }
       onClose();
@@ -49,7 +46,7 @@ export function ProductForm({ product, onClose }: ProductFormProps) {
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
         <div className="flex justify-between items-center p-4 border-b border-slate-200">
           <h3 className="text-lg font-semibold text-slate-800">
-            {product ? 'Editar Produto' : 'Novo Produto'}
+            {product ? 'Editar Tamanho' : 'Novo Tamanho'}
           </h3>
           <button
             onClick={onClose}
@@ -69,47 +66,24 @@ export function ProductForm({ product, onClose }: ProductFormProps) {
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Descrição
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-              rows={3}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Categoria
-            </label>
-            <input
-              type="text"
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              placeholder="Ex: Açaí 300ml"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Preço de Custo *
+                Tamanho (ML) *
               </label>
               <input
                 type="number"
                 required
-                step="0.01"
-                min="0"
-                value={formData.cost_price}
-                onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                min="1"
+                step="1"
+                value={formData.size_ml}
+                onChange={(e) => setFormData({ ...formData, size_ml: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
               />
             </div>
 
@@ -124,39 +98,21 @@ export function ProductForm({ product, onClose }: ProductFormProps) {
                 min="0"
                 value={formData.sale_price}
                 onChange={(e) => setFormData({ ...formData, sale_price: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Quantidade em Estoque *
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                value={formData.stock_quantity}
-                onChange={(e) => setFormData({ ...formData, stock_quantity: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Estoque Mínimo *
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                value={formData.min_stock}
-                onChange={(e) => setFormData({ ...formData, min_stock: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Categoria
+            </label>
+            <input
+              type="text"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+            />
           </div>
 
           <div className="flex gap-3 pt-4">
@@ -170,7 +126,7 @@ export function ProductForm({ product, onClose }: ProductFormProps) {
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
             >
               {loading ? 'Salvando...' : 'Salvar'}
             </button>
