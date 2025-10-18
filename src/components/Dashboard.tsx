@@ -44,42 +44,64 @@ export function Dashboard() {
           break;
       }
 
-      const { data: salesData } = await supabase
+      // ✅ Corrigido: define relacionamentos explícitos dos potes
+      const { data: salesData, error: salesError } = await supabase
         .from('sales')
-        .select('*, acai_products(*), potes(*)')
+        .select(`
+          *,
+          acai_products(*),
+          pote_1:potes!sales_pote_id_fkey(*),
+          pote_2:potes!sales_pote_id_2_fkey(*)
+        `)
         .gte('sale_date', startDate.toISOString());
 
-      const { data: expensesData } = await supabase
+      if (salesError) throw salesError;
+
+      const { data: expensesData, error: expensesError } = await supabase
         .from('expenses')
         .select('*')
         .gte('expense_date', startDate.toISOString());
 
-      const { data: potesData } = await supabase
+      if (expensesError) throw expensesError;
+
+      const { data: potesData, error: potesError } = await supabase
         .from('potes')
         .select('*')
         .eq('status', 'ativo');
 
-      const totalSales = salesData?.length || 0;
-      const totalRevenue = salesData?.reduce((sum, sale) => sum + sale.total_price, 0) || 0;
+      if (potesError) throw potesError;
 
-      const totalCost = salesData?.reduce((sum, sale) => {
-        const pote = sale.potes as any;
-        if (!pote) return sum;
-        const costPerMl = pote.cost_price / pote.total_ml;
-        return sum + (costPerMl * sale.ml_consumed);
-      }, 0) || 0;
+      // =============================
+      // 🔹 Cálculo das métricas
+      // =============================
+      const totalSales = salesData?.length || 0;
+      const totalRevenue =
+        salesData?.reduce((sum, sale) => sum + sale.total_price, 0) || 0;
+
+      const totalCost =
+        salesData?.reduce((sum, sale) => {
+          const pote1 = sale.pote_1 as Pote | null;
+          const pote2 = sale.pote_2 as Pote | null;
+          const cost1 = pote1 ? pote1.cost_price / pote1.total_ml : 0;
+          const cost2 = pote2 ? pote2.cost_price / pote2.total_ml : 0;
+
+          if (sale.is_meio_a_meio) {
+            return sum + cost1 * sale.ml_consumed + cost2 * sale.ml_consumed_2;
+          } else {
+            return sum + cost1 * sale.ml_consumed;
+          }
+        }, 0) || 0;
 
       const totalProfit = totalRevenue - totalCost;
 
-      const totalExpenses = expensesData?.reduce((sum, expense) => sum + expense.amount, 0) || 0;
+      const totalExpenses =
+        expensesData?.reduce((sum, expense) => sum + expense.amount, 0) || 0;
 
-      const potesInventoryValue = potesData?.reduce(
-        (sum, pote) => {
+      const potesInventoryValue =
+        potesData?.reduce((sum, pote) => {
           const costPerMl = pote.cost_price / pote.total_ml;
-          return sum + (costPerMl * pote.remaining_ml);
-        },
-        0
-      ) || 0;
+          return sum + costPerMl * pote.remaining_ml;
+        }, 0) || 0;
 
       const netProfit = totalProfit - totalExpenses;
 
@@ -109,9 +131,7 @@ export function Dashboard() {
         .lte('remaining_ml', 1000)
         .order('remaining_ml', { ascending: true });
 
-      if (!error) {
-        setLowStockPotes(data || []);
-      }
+      if (!error) setLowStockPotes(data || []);
     } catch (error) {
       console.error('Erro ao carregar potes com estoque baixo:', error);
     }
@@ -148,104 +168,53 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Métricas */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-blue-100 text-sm font-medium">Total de Vendas</p>
-              <p className="text-3xl font-bold mt-2">{metrics.totalSales}</p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <ShoppingCart size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-emerald-100 text-sm font-medium">Receita</p>
-              <p className="text-2xl font-bold mt-2">
-                {formatCurrency(metrics.totalRevenue)}
-              </p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <DollarSign size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-orange-100 text-sm font-medium">Custo do Açaí</p>
-              <p className="text-2xl font-bold mt-2">
-                {formatCurrency(metrics.totalCost)}
-              </p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <Package size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-teal-100 text-sm font-medium">Lucro Bruto</p>
-              <p className="text-2xl font-bold mt-2">
-                {formatCurrency(metrics.totalProfit)}
-              </p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <TrendingUp size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-red-100 text-sm font-medium">Despesas</p>
-              <p className="text-2xl font-bold mt-2">
-                {formatCurrency(metrics.totalExpenses)}
-              </p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <DollarSign size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-slate-700 to-slate-800 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-300 text-sm font-medium">Lucro Líquido</p>
-              <p className="text-2xl font-bold mt-2">
-                {formatCurrency(metrics.netProfit)}
-              </p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <TrendingUp size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-md p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-purple-100 text-sm font-medium">Valor em Potes</p>
-              <p className="text-2xl font-bold mt-2">
-                {formatCurrency(metrics.potesInventoryValue)}
-              </p>
-            </div>
-            <div className="bg-white bg-opacity-20 p-3 rounded-lg">
-              <Package size={28} />
-            </div>
-          </div>
-        </div>
+        <MetricCard
+          title="Total de Vendas"
+          value={metrics.totalSales}
+          icon={<ShoppingCart size={28} />}
+          gradient="from-blue-500 to-blue-600"
+        />
+        <MetricCard
+          title="Receita"
+          value={formatCurrency(metrics.totalRevenue)}
+          icon={<DollarSign size={28} />}
+          gradient="from-emerald-500 to-emerald-600"
+        />
+        <MetricCard
+          title="Custo do Açaí"
+          value={formatCurrency(metrics.totalCost)}
+          icon={<Package size={28} />}
+          gradient="from-orange-500 to-orange-600"
+        />
+        <MetricCard
+          title="Lucro Bruto"
+          value={formatCurrency(metrics.totalProfit)}
+          icon={<TrendingUp size={28} />}
+          gradient="from-teal-500 to-teal-600"
+        />
+        <MetricCard
+          title="Despesas"
+          value={formatCurrency(metrics.totalExpenses)}
+          icon={<DollarSign size={28} />}
+          gradient="from-red-500 to-red-600"
+        />
+        <MetricCard
+          title="Lucro Líquido"
+          value={formatCurrency(metrics.netProfit)}
+          icon={<TrendingUp size={28} />}
+          gradient="from-slate-700 to-slate-800"
+        />
+        <MetricCard
+          title="Valor em Potes"
+          value={formatCurrency(metrics.potesInventoryValue)}
+          icon={<Package size={28} />}
+          gradient="from-purple-500 to-purple-600"
+        />
       </div>
 
+      {/* Estoque baixo */}
       {lowStockPotes.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -263,7 +232,8 @@ export function Dashboard() {
                 <div>
                   <p className="font-medium text-slate-800">{pote.flavor}</p>
                   <p className="text-sm text-slate-600">
-                    Comprado em: {new Date(pote.purchase_date).toLocaleDateString('pt-BR')}
+                    Comprado em:{' '}
+                    {new Date(pote.purchase_date).toLocaleDateString('pt-BR')}
                   </p>
                 </div>
                 <div className="text-right">
@@ -279,6 +249,32 @@ export function Dashboard() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  icon,
+  gradient,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  gradient: string;
+}) {
+  return (
+    <div
+      className={`bg-gradient-to-br ${gradient} rounded-lg shadow-md p-6 text-white`}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-white/80 text-sm font-medium">{title}</p>
+          <p className="text-2xl font-bold mt-2">{value}</p>
+        </div>
+        <div className="bg-white bg-opacity-20 p-3 rounded-lg">{icon}</div>
+      </div>
     </div>
   );
 }
