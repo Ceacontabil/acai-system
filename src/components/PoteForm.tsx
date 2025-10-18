@@ -151,7 +151,14 @@ export function PoteForm({ pote, onClose }: PoteFormProps) {
               <p className="text-sm text-slate-600">
                 <span className="font-medium">Custo por ML:</span>{' '}
                 <span className="text-purple-700 font-semibold">
-                  R$ {(formData.cost_price / (formData.size_liters * 1000)).toFixed(4)}
+                  R${' '}
+                  {(
+                    formData.cost_price /
+                    (formData.size_liters * 1000)
+                  ).toLocaleString('pt-BR', {
+                    minimumFractionDigits: 4,
+                    maximumFractionDigits: 4,
+                  })}
                 </span>
               </p>
             </div>
