@@ -13,17 +13,14 @@ export function SaleForm({ onClose }: SaleFormProps) {
   const [potes, setPotes] = useState<Pote[]>([]);
   const [formData, setFormData] = useState({
     product_id: '',
-    pote_id: '',
-    pote_id_2: '',
-    is_meio_a_meio: false,
+    pote_ids: [''],
     quantity: 1,
     unit_price: 0,
     notes: '',
   });
   const [loading, setLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<AcaiProduct | null>(null);
-  const [selectedPote, setSelectedPote] = useState<Pote | null>(null);
-  const [selectedPote2, setSelectedPote2] = useState<Pote | null>(null);
+  const [selectedPotes, setSelectedPotes] = useState<Pote[]>([]);
 
   useEffect(() => {
     loadProducts();
@@ -55,36 +52,49 @@ export function SaleForm({ onClose }: SaleFormProps) {
     });
   }
 
-  function handlePoteChange(poteId: string, isSecond = false) {
-    const pote = potes.find((p) => p.id === poteId);
-    if (isSecond) {
-      setSelectedPote2(pote || null);
-      setFormData({ ...formData, pote_id_2: poteId });
-    } else {
-      setSelectedPote(pote || null);
-      setFormData({ ...formData, pote_id: poteId });
-    }
+  function handlePoteChange(poteId: string, index: number) {
+    const updatedPotes = [...selectedPotes];
+    updatedPotes[index] = potes.find((p) => p.id === poteId) || null;
+    setSelectedPotes(updatedPotes);
+    const updatedIds = [...formData.pote_ids];
+    updatedIds[index] = poteId;
+    setFormData({ ...formData, pote_ids: updatedIds });
+  }
+
+  function addPote() {
+    const newPotes = [...selectedPotes, null];
+    setSelectedPotes(newPotes);
+    setFormData({
+      ...formData,
+      pote_ids: [...formData.pote_ids, ''],
+    });
+  }
+
+  function removePote(index: number) {
+    const updatedPotes = selectedPotes.filter((_, i) => i !== index);
+    setSelectedPotes(updatedPotes);
+    const updatedIds = formData.pote_ids.filter((_, i) => i !== index);
+    setFormData({ ...formData, pote_ids: updatedIds });
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!selectedProduct || !selectedPote) {
+    const validPotesParaValidacao = selectedPotes.filter((pote: Pote) => pote !== null && pote.id !== '');
+    
+    if (!selectedProduct || validPotesParaValidacao.length === 0) {
       alert('Selecione um produto e pelo menos um pote!');
       return;
     }
 
     const mlTotal = selectedProduct.size_ml * formData.quantity;
-    const mlPorPote = formData.is_meio_a_meio ? mlTotal / 2 : mlTotal;
+    const validPotes = selectedPotes.filter((pote) => pote !== null) as Pote[];
+    const mlPorPote = mlTotal / validPotes.length;
 
-    // Validações
-    if (mlPorPote > selectedPote.remaining_ml) {
-      alert(`Pote 1 sem ML suficiente! Precisa de ${mlPorPote}ml, tem ${selectedPote.remaining_ml}ml`);
-      return;
-    }
+    const poteSemML = validPotes.find(pote => pote.remaining_ml < mlPorPote);
 
-    if (formData.is_meio_a_meio && (!selectedPote2 || mlPorPote > selectedPote2.remaining_ml)) {
-      alert(`Pote 2 sem ML suficiente! Precisa de ${mlPorPote}ml, tem ${selectedPote2?.remaining_ml || 0}ml`);
+    if (poteSemML) {
+      alert(`O Pote "${poteSemML.flavor}" não tem ML suficiente! Precisa de ${mlPorPote.toFixed(2)}ml, tem ${poteSemML.remaining_ml}ml`);
       return;
     }
 
@@ -92,24 +102,29 @@ export function SaleForm({ onClose }: SaleFormProps) {
 
     try {
       const total_price = formData.quantity * formData.unit_price;
-      const total_cost = (() => {
-        const cost1 = selectedPote ? selectedPote.cost_price / selectedPote.total_ml : 0;
-        const cost2 = selectedPote2 ? selectedPote2.cost_price / selectedPote2.total_ml : 0;
-        return formData.is_meio_a_meio ? ((cost1 + cost2) / 2) * mlTotal : cost1 * mlTotal;
-      })();
+      const totalCost = validPotes.reduce((acc: number, pote: Pote) => {
+        const costPerMl = pote && pote.total_ml > 0 ? pote.cost_price / pote.total_ml : 0;
+        return acc + (costPerMl * mlPorPote);
+      }, 0);
+      const totalCostValid = isNaN(totalCost) ? 0 : totalCost;
+
+      const finalPoteIds = formData.pote_ids.filter(id => id.length > 0);
+      
+      if (finalPoteIds.length === 0) {
+         alert('Nenhum pote válido selecionado!');
+         setLoading(false);
+         return; 
+      }
 
       const { error } = await supabase.from('sales').insert([
         {
           product_id: formData.product_id,
-          pote_id: formData.pote_id,
-          pote_id_2: formData.is_meio_a_meio ? formData.pote_id_2 : null,
-          is_meio_a_meio: formData.is_meio_a_meio,
+          pote_ids: finalPoteIds, 
           quantity: formData.quantity,
           unit_price: formData.unit_price,
           total_price,
-          total_cost,
-          ml_consumed: formData.is_meio_a_meio ? mlPorPote : mlTotal,
-          ml_consumed_2: formData.is_meio_a_meio ? mlPorPote : 0,
+          total_cost: totalCostValid,
+          ml_consumed: mlTotal,
           notes: formData.notes,
         },
       ]);
@@ -126,12 +141,18 @@ export function SaleForm({ onClose }: SaleFormProps) {
   }
 
   const mlNeeded = selectedProduct ? selectedProduct.size_ml * formData.quantity : 0;
-  const mlPorPote = formData.is_meio_a_meio ? mlNeeded / 2 : mlNeeded;
-  const costPerMl = selectedPote ? selectedPote.cost_price / selectedPote.total_ml : 0;
-  const totalCost = costPerMl * mlNeeded;
+  const validPotes = selectedPotes.filter((pote: Pote) => pote !== null && pote !== undefined);
+  const mlPorPote = validPotes.length > 0 ? mlNeeded / validPotes.length : 0;
   const totalPrice = formData.quantity * formData.unit_price;
-  const profit = totalPrice - totalCost;
 
+  const totalCost = validPotes.reduce((acc, pote: Pote) => {
+    const costPerMl = pote.total_ml > 0 ? pote.cost_price / pote.total_ml : 0;
+    return acc + (costPerMl * mlPorPote);
+  }, 0);
+
+  const totalCostValid = isNaN(totalCost) ? 0 : totalCost;
+
+  const profit = totalPrice - totalCostValid;
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
@@ -163,58 +184,42 @@ export function SaleForm({ onClose }: SaleFormProps) {
             </select>
           </div>
 
-          {/* Checkbox meio a meio */}
-          <div className="flex items-center gap-2">
-            <input
-              id="is_meio_a_meio"
-              type="checkbox"
-              checked={formData.is_meio_a_meio}
-              onChange={(e) => setFormData({ ...formData, is_meio_a_meio: e.target.checked })}
-            />
-            <label htmlFor="is_meio_a_meio" className="text-sm text-slate-700 font-medium">
-              Venda meio a meio
-            </label>
+          {/* Botão adicionar potes */}
+          <div className="flex gap-2">
+            <button type="button" onClick={addPote} className="px-4 py-1 border bg-indigo-700 border-slate-300 text-white rounded-lg hover:bg-purple-500 transition ease duration-300">
+              Adicionar Pote
+            </button>
           </div>
 
-          {/* Pote principal */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Pote 1 *</label>
-            <select
-              required
-              value={formData.pote_id}
-              onChange={(e) => handlePoteChange(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
-            >
-              <option value="">Selecione o pote</option>
-              {potes.map((pote) => (
-                <option key={pote.id} value={pote.id}>
-                  {pote.flavor} - {pote.remaining_ml}ml restantes
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Pote 2 (só se meio a meio) */}
-          {formData.is_meio_a_meio && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Pote 2 *</label>
-              <select
-                required
-                value={formData.pote_id_2}
-                onChange={(e) => handlePoteChange(e.target.value, true)}
-                className="w-full px-3 py-2 border rounded-lg"
-              >
-                <option value="">Selecione o segundo pote</option>
-                {potes
-                  .filter((p) => p.id !== formData.pote_id)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.flavor} - {p.remaining_ml}ml restantes
+          {/* Potes Selecionados */}
+          {selectedPotes.map((_, index) => (
+            <div key={index}>
+                <label className="block w-1/4 text-sm font-medium text-slate-700 mb-1">{`Pote ${index + 1} *`}</label>
+              <div  className="flex items-center gap-2">
+                <select
+                  required
+                  value={formData.pote_ids[index]}
+                  onChange={(e) => handlePoteChange(e.target.value, index)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">Selecione o pote</option>
+                  {potes.map((pote) => (
+                    <option key={pote.id} value={pote.id}>
+                      {pote.flavor} - {pote.remaining_ml}ml restantes
                     </option>
                   ))}
-              </select>
+                </select>
+                {/* Ícone de remover pote */}
+                <button
+                  type="button"
+                  onClick={() => removePote(index)}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
-          )}
+          ))}
 
           {/* Quantidade / Preço */}
           <div className="grid grid-cols-2 gap-4">
@@ -241,23 +246,23 @@ export function SaleForm({ onClose }: SaleFormProps) {
           </div>
 
           {/* Resumo */}
-          {selectedProduct && (
+          {selectedProduct && selectedPotes.length > 0 && (
             <div className="bg-slate-50 rounded-lg p-3 text-sm">
               <div className="flex justify-between">
                 <span>ML total:</span>
                 <span>{mlNeeded}ml</span>
               </div>
-              {formData.is_meio_a_meio && (
+              {selectedPotes.filter((p) => p !== null).length > 1 && (
                 <div className="flex justify-between">
                   <span>ML por pote:</span>
-                  <span>{mlPorPote}ml</span>
+                  <span>{mlPorPote.toFixed(2)}ml</span>
                 </div>
               )}
             </div>
           )}
 
           {/* Totais */}
-          {selectedProduct && selectedPote && (
+          {selectedProduct && selectedPotes.length > 0 && (
             <div className="bg-blue-50 rounded-lg p-3 space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Total da venda:</span>
@@ -265,11 +270,11 @@ export function SaleForm({ onClose }: SaleFormProps) {
               </div>
               <div className="flex justify-between">
                 <span>Custo estimado:</span>
-                <span className="font-semibold">{formatCurrency(totalCost)}</span>
+                <span className="font-semibold">{formatCurrency(totalCostValid)}</span> {/* AGORA FUNCIONA */}
               </div>
               <div className="flex justify-between border-t pt-2">
                 <span>Lucro estimado:</span>
-                <span className="font-semibold text-emerald-600">{formatCurrency(profit)}</span>
+                <span className="font-semibold text-emerald-600">{formatCurrency(profit)}</span> {/* AGORA FUNCIONA */}
               </div>
             </div>
           )}
@@ -285,7 +290,7 @@ export function SaleForm({ onClose }: SaleFormProps) {
             </button>
             <button
               type="submit"
-              disabled={loading || !selectedProduct || !selectedPote || (formData.is_meio_a_meio && !selectedPote2)}
+              disabled={loading || !selectedProduct || validPotes.length === 0}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {loading ? 'Registrando...' : 'Registrar Venda'}
