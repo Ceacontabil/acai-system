@@ -44,14 +44,11 @@ export function Dashboard() {
           break;
       }
 
-      // ✅ Corrigido: define relacionamentos explícitos dos potes
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select(`
           *,
-          acai_products(*),
-          pote_1:potes!sales_pote_id_fkey(*),
-          pote_2:potes!sales_pote_id_2_fkey(*)
+          acai_products(*)
         `)
         .gte('sale_date', startDate.toISOString());
 
@@ -79,26 +76,15 @@ export function Dashboard() {
         salesData?.reduce((sum, sale) => sum + sale.total_price, 0) || 0;
 
       const totalCost =
-        salesData?.reduce((sum, sale) => {
-          const pote1 = sale.pote_1 as Pote | null;
-          const pote2 = sale.pote_2 as Pote | null;
-          const cost1 = pote1 ? pote1.cost_price / pote1.total_ml : 0;
-          const cost2 = pote2 ? pote2.cost_price / pote2.total_ml : 0;
-
-          if (sale.is_meio_a_meio) {
-            return sum + cost1 * sale.ml_consumed + cost2 * sale.ml_consumed_2;
-          } else {
-            return sum + cost1 * sale.ml_consumed;
-          }
-        }, 0) || 0;
-
+        salesData?.reduce((sum, sale) => sum + (sale.total_cost || 0), 0) || 0; 
+        
       const totalProfit = totalRevenue - totalCost;
 
       const totalExpenses =
         expensesData?.reduce((sum, expense) => sum + expense.amount, 0) || 0;
 
       const potesInventoryValue =
-        potesData?.reduce((sum, pote) => {
+        potesData?.reduce((sum, pote: Pote) => {
           const costPerMl = pote.cost_price / pote.total_ml;
           return sum + costPerMl * pote.remaining_ml;
         }, 0) || 0;
